@@ -1,0 +1,24 @@
+{
+	"name": "deepcache",
+	"version": "1.0.0",
+	"description": "",
+	"main": "dist/index.js",
+	"scripts": {
+		"example": "npm run build && node dist/example/index.js",
+		"start": "npm run build && node dist/index.js",
+		"build": "tsc --project tsconfig.json",
+		"watch": "tsc --watch"
+	},
+	"author": "",
+	"type": "commonjs",
+	"license": "MIT",
+	"devDependencies": {
+		"@types/msgpack": "^0.0.34",
+		"@types/node": "^20.10.4",
+		"typescript": "^4.9.3",
+		"uvu": "^0.5.6"
+	},
+	"dependencies": {
+		"msgpack": "^1.0.3"
+	}
+}

@@ -2,74 +2,48 @@ import { readFileSync, writeFileSync } from "fs";
 import * as msgpack from "msgpack";
 
 type AllowedArray = AllowedCacheValue[];
-type AllowedObject = { [key: string]: AllowedCacheValue; };
+type AllowedObject = { [key: string]: AllowedCacheValue };
 type AllowedCacheValue = string | number | boolean | null | AllowedObject | AllowedArray;
 
-////////////////////////////////
+let cachedTimestamp;
 
-let cachedTimestamp: number;
-
-const getTimestamp = function () {
-    return cachedTimestamp;
-};
-
-const updateTimestamp = function () {
-    cachedTimestamp = Math.round(new Date().getTime() / 1000);
+const updateTimestamp = () => {
+    cachedTimestamp = Date.now();
 };
 
 updateTimestamp();
 setInterval(updateTimestamp, 1000);
 
-////////////////////////////////
+const cachedKeyPath: { [key: string]: string[] } = {};
 
-const cachedKeyPath: { [key: string]: string[]; } = {};
+function getKeyPath(key: string): string[] | false {
+    const delimiterIndex = key.lastIndexOf(':');
 
-function getKeyPath(key: string) {
-    let a = key.lastIndexOf(`:`);
-
-    if (a === -1) {
+    if (delimiterIndex === -1) {
         return false;
     }
 
-    let path = key.substring(0, a + 1);
-
+    const path = key.substring(0, delimiterIndex + 1);
     if (!cachedKeyPath[path]) {
-        cachedKeyPath[path] = [];
-
-        let formattedPath = ``;
-
-        for (let i of path.split(`:`)) {
-            if (i === ``) {
-                continue;
-            }
-            if (formattedPath === ``) {
-                formattedPath = i;
-            } else {
-                formattedPath = `${formattedPath}:${i}`;
-            };
-
-            cachedKeyPath[path].push(`${formattedPath}:*`);
-        }
+        cachedKeyPath[path] = path.split(':')
+            .filter(Boolean)
+            .map((_, index, arr) => `${arr.slice(0, index + 1).join(':')}:*`);
     }
-
     return cachedKeyPath[path];
 }
 
 const EmptyMapIterator = (new Map()).keys();
 
-////////////////////////////////
-
 export default class DeepCache {
-
     private __root: {
-        data: { [key: string]: AllowedCacheValue; };
-        ttl: { [key: string]: { start: number, ttl: number; }; };
+        data: { [key: string]: AllowedCacheValue };
+        ttl: { [key: string]: { start: number, ttl: number } };
         keys: Set<string>;
     };
 
     private __folders: {
         [key: string]: {
-            data: { [key: string]: AllowedCacheValue; };
+            data: { [key: string]: AllowedCacheValue };
             keys: Set<string>;
         };
     };
@@ -77,32 +51,12 @@ export default class DeepCache {
     private __ttl: number;
     private __dump?: string;
 
-    constructor(options?: { ttl?: number; dump?: string; }) {
+    constructor(options?: { ttl?: number; dump?: string }) {
         this.__folders = {};
+        this.__root = { data: {}, ttl: {}, keys: new Set() };
 
-        this.__root = {
-            data: {},
-            ttl: {},
-            keys: new Set()
-        };
-
-        if (options && (options.ttl !== undefined)) {
-            this.__ttl = Math.round(options.ttl);
-
-            if (this.__ttl !== options.ttl) {
-                console.warn(`"ttl" option changed to ${this.__ttl}`);
-            }
-
-            if (!(this.__ttl > 0)) {
-                throw new Error(`"ttl" option can not be 0 or less.`);
-            }
-        } else {
-            this.__ttl = 60;
-        }
-
-        if (options && (options.dump)) {
-            this.__dump = options.dump;
-        }
+        this.__ttl = options?.ttl && options.ttl > 0 ? Math.round(options.ttl) : 60;
+        this.__dump = options?.dump;
     }
 
     ////////
@@ -113,7 +67,7 @@ export default class DeepCache {
         }
 
         let dumpData = {};
-        let timestamp = getTimestamp();
+        let timestamp = cachedTimestamp;
 
         for (let [key, value] of Object.entries(this.__root.data)) {
             const ttl = this.__root.ttl[key];
@@ -122,7 +76,7 @@ export default class DeepCache {
                 continue;
             }
 
-            if ((ttl.start + ttl.ttl) <= getTimestamp()) {
+            if ((ttl.start + ttl.ttl) <= timestamp) {
                 continue;
             }
 
@@ -142,7 +96,7 @@ export default class DeepCache {
         let file = readFileSync(this.__dump);
         let cache: { [key: string]: [AllowedCacheValue, number, number]; } = msgpack.unpack(file);
 
-        let timestamp = getTimestamp();
+        let timestamp = cachedTimestamp;
 
         for (let [key, value] of Object.entries(cache)) {
             if ((value[1] + value[2]) <= timestamp) {
@@ -157,9 +111,7 @@ export default class DeepCache {
 
     ////////
 
-    private __set(key: string, value: AllowedCacheValue, ttl?: number, ttlend?: number, timestamp = getTimestamp()) {
-
-        const ttlData = { start: timestamp, ttl: ttl || this.__ttl };
+    private __set(key: string, value: AllowedCacheValue, ttl?: number, ttlend?: number, timestamp = cachedTimestamp) {
         const rootFolder = this.__root;
 
         rootFolder.data[key] = value;
@@ -181,7 +133,6 @@ export default class DeepCache {
                 }
 
                 const childFolder = this.__folders[folder];
-
                 childFolder.data[key] = rootFolder.data[key];
 
                 if (!childFolder.keys.has(key)) {
@@ -210,7 +161,7 @@ export default class DeepCache {
 
         const ttl = this.__root.ttl[key];
 
-        if (ttl && ((ttl.start + ttl.ttl) <= getTimestamp())) {
+        if (ttl && ((ttl.start + ttl.ttl) <= cachedTimestamp)) {
             this.__del(key);
             return undefined;
         }

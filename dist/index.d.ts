@@ -7,6 +7,7 @@ export default class DeepCache {
     private __root;
     private __folders;
     private __ttl;
+    private __ttc;
     private __dump?;
     private __separator?;
     private __simple?;
@@ -17,12 +18,15 @@ export default class DeepCache {
         separator?: string | false;
         simple?: boolean;
         cloning?: boolean;
+        ttc?: number;
     });
     saveDump(): boolean;
     loadDump(): boolean;
     private __set;
     private __del;
     private __key;
+    private __clean;
+    clean(): boolean;
     set(key: string, value: AllowedCacheValue, ttl?: number): boolean;
     has(key: string): boolean;
     get(key: string): AllowedCacheValue | undefined;

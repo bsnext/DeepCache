@@ -15,12 +15,13 @@ class DeepCache {
         this.__folders = {};
         this.__root = { data: {}, ttl: {}, keys: new Set() };
         this.__ttl = (options === null || options === void 0 ? void 0 : options.ttl) && options.ttl > 0 ? Math.round(options.ttl) : 60;
+        this.__ttc = (options === null || options === void 0 ? void 0 : options.ttc) && options.ttc > 0 ? Math.round(options.ttc) : 60;
         this.__dump = options === null || options === void 0 ? void 0 : options.dump;
         this.__separator = options === null || options === void 0 ? void 0 : options.separator;
         this.__simple = options === null || options === void 0 ? void 0 : options.simple;
         this.__cloning = options === null || options === void 0 ? void 0 : options.cloning;
+        const __this = this;
         if (this.__separator) {
-            const cachedKeyPath = {};
             const getKeyPath = function (key) {
                 const delimiterIndex = key.lastIndexOf(':');
                 if (delimiterIndex === -1) {
@@ -95,6 +96,37 @@ class DeepCache {
                 }
                 return deleteResult;
             };
+            if (this.__ttc) {
+                this.__clean = function () {
+                    let removedKeys = 0;
+                    const rootFolder = __this.__root;
+                    for (let i in rootFolder.ttl) {
+                        let value = rootFolder.ttl[i];
+                        if ((value.start + value.ttl) <= cachedTimestamp) {
+                            delete rootFolder.data[i];
+                            delete rootFolder.ttl[i];
+                            if (!__this.__simple) {
+                                rootFolder.keys.delete(i);
+                            }
+                            const path = getKeyPath(i);
+                            if (path !== false) {
+                                for (let folder of path) {
+                                    const childFolder = __this.__folders[folder];
+                                    if (childFolder !== undefined) {
+                                        delete childFolder.data[i];
+                                        childFolder.keys.delete(i);
+                                    }
+                                }
+                            }
+                            removedKeys++;
+                            console.log(`cleaning a ${i} key`);
+                        }
+                    }
+                    console.log(`cleaned x${removedKeys} keys`);
+                    return true;
+                };
+                setInterval(this.__clean, this.__ttc * 1000);
+            }
         }
         else {
             this.__set = function (key, value, ttl, ttlend, timestamp = cachedTimestamp) {
@@ -123,6 +155,27 @@ class DeepCache {
                     return deleteResult;
                 }
             };
+            if (this.__ttc) {
+                this.__clean = function () {
+                    let removedKeys = 0;
+                    const rootFolder = __this.__root;
+                    for (let i in rootFolder.ttl) {
+                        let value = rootFolder.ttl[i];
+                        if ((value.start + value.ttl) <= cachedTimestamp) {
+                            delete rootFolder.data[i];
+                            delete rootFolder.ttl[i];
+                            if (!__this.__simple) {
+                                rootFolder.keys.delete(i);
+                            }
+                            removedKeys++;
+                            console.log(`cleaning a ${i} key`);
+                        }
+                    }
+                    console.log(`cleaned x${removedKeys} keys`);
+                    return true;
+                };
+                setInterval(this.__clean, this.__ttc * 1000);
+            }
         }
     }
     saveDump() {
@@ -167,6 +220,12 @@ class DeepCache {
     }
     __key(key) {
         return [];
+    }
+    __clean() {
+        return true;
+    }
+    clean() {
+        return this.__clean();
     }
     set(key, value, ttl) {
         if ((this.__cloning === true) && (typeof value === `object`) && (value !== null) && (value !== undefined)) {

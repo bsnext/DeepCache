@@ -40,25 +40,31 @@ export default class DeepCache {
     };
 
     private __ttl: number;
+    private __ttc: number;
     private __dump?: string;
     private __separator?: string | false;
     private __simple?: boolean;
     private __cloning?: boolean;
 
-    constructor(options?: { ttl?: number; dump?: string; separator?: string | false; simple?: boolean; cloning?: boolean; }) {
+    constructor(options?: { ttl?: number; dump?: string; separator?: string | false; simple?: boolean; cloning?: boolean; ttc?: number }) {
         this.__folders = {};
         this.__root = { data: {}, ttl: {}, keys: new Set() };
 
         this.__ttl = options?.ttl && options.ttl > 0 ? Math.round(options.ttl) : 60;
+        this.__ttc = options?.ttc && options.ttc > 0 ? Math.round(options.ttc) : 60;
         this.__dump = options?.dump;
         this.__separator = options?.separator;
         this.__simple = options?.simple;
         this.__cloning = options?.cloning;
 
         ////////////////////////
+        
+        const __this = this;
+
+        ////////////////////////
 
         if (this.__separator) {
-            const cachedKeyPath: { [key: string]: string[]; } = {};
+            // const cachedKeyPath: { [key: string]: string[]; } = {};
 
             const getKeyPath = function (key: string): string[] | false {
                 const delimiterIndex = key.lastIndexOf(':');
@@ -163,6 +169,49 @@ export default class DeepCache {
 
                 return deleteResult;
             };
+    
+            if (this.__ttc) {
+                this.__clean = function() {
+                    let removedKeys = 0;
+                    
+                    const rootFolder = __this.__root;
+
+                    for (let i in rootFolder.ttl) {
+                        let value = rootFolder.ttl[i]
+
+                        if ((value.start + value.ttl) <= cachedTimestamp) {
+                            delete rootFolder.data[i];
+                            delete rootFolder.ttl[i];
+
+                            if (!__this.__simple) {
+                                rootFolder.keys.delete(i);
+                            }                       
+
+                            const path = getKeyPath(i);
+
+                            if (path !== false) {
+                                for (let folder of path) {
+                                    const childFolder = __this.__folders[folder];
+
+                                    if (childFolder !== undefined) {
+                                        delete childFolder.data[i];
+                                        childFolder.keys.delete(i);
+                                    }
+                                }
+                            }
+
+                            removedKeys++;
+                            console.log(`cleaning a ${i} key`)
+                        }
+                    }
+
+                    console.log(`cleaned x${removedKeys} keys`)
+
+                    return true
+                }
+
+                setInterval(this.__clean, this.__ttc * 1000);
+            }
         } else {
             this.__set = function (key: string, value: AllowedCacheValue, ttl?: number, ttlend?: number, timestamp: number = cachedTimestamp) {
                 const rootFolder = this.__root;
@@ -202,6 +251,36 @@ export default class DeepCache {
                     return deleteResult;
                 }
             };
+
+            if (this.__ttc) {
+                this.__clean = function() {
+                    let removedKeys = 0;
+                    
+                    const rootFolder = __this.__root;
+
+                    for (let i in rootFolder.ttl) {
+                        let value = rootFolder.ttl[i]
+
+                        if ((value.start + value.ttl) <= cachedTimestamp) {
+                            delete rootFolder.data[i];
+                            delete rootFolder.ttl[i];
+
+                            if (!__this.__simple) {
+                                rootFolder.keys.delete(i);
+                            }
+
+                            removedKeys++;
+                            console.log(`cleaning a ${i} key`)
+                        }
+                    }
+
+                    console.log(`cleaned x${removedKeys} keys`)
+
+                    return true
+                }
+
+                setInterval(this.__clean, this.__ttc * 1000);
+            }
         }
     }
 
@@ -267,6 +346,16 @@ export default class DeepCache {
 
     private __key(key: string): (string[] | boolean) {
         return [];
+    }
+
+    private __clean(): boolean {
+        return true;
+    }
+
+    ////////
+
+    clean(): boolean {
+        return this.__clean();
     }
 
     ////////

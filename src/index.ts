@@ -17,11 +17,11 @@ const structuredClone = global.structuredClone;
 let cachedTimestamp;
 
 const updateTimestamp = () => {
-    cachedTimestamp = Date.now();
+    cachedTimestamp = Math.round(Date.now() / 1000);
 };
 
 updateTimestamp();
-// setInterval(updateTimestamp, 1000);
+setInterval(updateTimestamp, 1000);
 
 ////////////////////////////////
 
@@ -58,7 +58,7 @@ export default class DeepCache {
         this.__cloning = options?.cloning;
 
         ////////////////////////
-        
+
         const __this = this;
 
         ////////////////////////
@@ -169,11 +169,11 @@ export default class DeepCache {
 
                 return deleteResult;
             };
-    
+
             if (this.__ttc) {
-                this.__clean = function() {
+                this.__clean = function () {
                     let removedKeys = 0;
-                    
+
                     const rootFolder = __this.__root;
 
                     for (let i in rootFolder.ttl) {
@@ -185,7 +185,7 @@ export default class DeepCache {
 
                             if (!__this.__simple) {
                                 rootFolder.keys.delete(i);
-                            }                       
+                            }
 
                             const path = getKeyPath(i);
 
@@ -201,11 +201,8 @@ export default class DeepCache {
                             }
 
                             removedKeys++;
-                            console.log(`cleaning a ${i} key`)
                         }
                     }
-
-                    console.log(`cleaned x${removedKeys} keys`)
 
                     return true
                 }
@@ -253,9 +250,9 @@ export default class DeepCache {
             };
 
             if (this.__ttc) {
-                this.__clean = function() {
+                this.__clean = function () {
                     let removedKeys = 0;
-                    
+
                     const rootFolder = __this.__root;
 
                     for (let i in rootFolder.ttl) {
@@ -270,11 +267,8 @@ export default class DeepCache {
                             }
 
                             removedKeys++;
-                            console.log(`cleaning a ${i} key`)
                         }
                     }
-
-                    console.log(`cleaned x${removedKeys} keys`)
 
                     return true
                 }
@@ -381,10 +375,11 @@ export default class DeepCache {
         } else {
             if (this.__root.keys.has(key) === false) {
                 return false;
-            }            
+            }
         };
 
         const ttl = rootFolder.ttl[key];
+        console.log((ttl.start + ttl.ttl) - cachedTimestamp)
 
         if ((ttl !== undefined) && ((ttl.start + ttl.ttl) <= cachedTimestamp)) {
             this.__del(key);

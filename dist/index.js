@@ -7,9 +7,10 @@ const IsArray = Array.isArray;
 const structuredClone = global.structuredClone;
 let cachedTimestamp;
 const updateTimestamp = () => {
-    cachedTimestamp = Date.now();
+    cachedTimestamp = Math.round(Date.now() / 1000);
 };
 updateTimestamp();
+setInterval(updateTimestamp, 1000);
 class DeepCache {
     constructor(options) {
         this.__folders = {};
@@ -119,10 +120,8 @@ class DeepCache {
                                 }
                             }
                             removedKeys++;
-                            console.log(`cleaning a ${i} key`);
                         }
                     }
-                    console.log(`cleaned x${removedKeys} keys`);
                     return true;
                 };
                 setInterval(this.__clean, this.__ttc * 1000);
@@ -168,10 +167,8 @@ class DeepCache {
                                 rootFolder.keys.delete(i);
                             }
                             removedKeys++;
-                            console.log(`cleaning a ${i} key`);
                         }
                     }
-                    console.log(`cleaned x${removedKeys} keys`);
                     return true;
                 };
                 setInterval(this.__clean, this.__ttc * 1000);
@@ -250,6 +247,7 @@ class DeepCache {
         }
         ;
         const ttl = rootFolder.ttl[key];
+        console.log((ttl.start + ttl.ttl) - cachedTimestamp);
         if ((ttl !== undefined) && ((ttl.start + ttl.ttl) <= cachedTimestamp)) {
             this.__del(key);
             return false;

@@ -1,8 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.delay = void 0;
 const uvu_1 = require("uvu");
 const assert = require("uvu/assert");
 const __1 = require("..");
+function delay(time) {
+    return new Promise(function (resolve) {
+        setTimeout(resolve, time, void 0);
+    });
+}
+exports.delay = delay;
 (0, uvu_1.test)('Test #1 (Set, Get, Del, Has)', async () => {
     const cache = new __1.default();
     cache.set("test_key", "test_value");
@@ -40,6 +47,13 @@ const __1 = require("..");
     assert.equal(cache.values(`hehe:*`), {});
     assert.equal(cache.keys(), new Set(["test_key_2"]));
     assert.equal(cache.values(), { test_key_2: `test_value_2` });
+});
+(0, uvu_1.test)('Test #4 (TTL)', async () => {
+    const cache = new __1.default({ ttl: 5, ttc: 600 });
+    cache.set("test_key_1", "test_value_1");
+    assert.equal(cache.has("test_key_1"), true);
+    await delay(5000 + 1000);
+    assert.equal(cache.has("test_key_1"), false);
 });
 uvu_1.test.run();
 //# sourceMappingURL=index.js.map

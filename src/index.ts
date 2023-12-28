@@ -1,6 +1,6 @@
 import { throws } from "assert";
 import { readFileSync, writeFileSync } from "fs";
-import * as msgpack from "msgpack";
+import * as msgpack from "@msgpack/msgpack";
 
 ////////////////////////////////
 
@@ -302,7 +302,7 @@ export default class DeepCache {
             dumpData[key] = [value, ttl?.start, ttl?.ttl];
         }
 
-        writeFileSync(this.__dump, msgpack.pack(dumpData));
+        writeFileSync(this.__dump, msgpack.encode(dumpData));
 
         return true;
     }
@@ -313,8 +313,13 @@ export default class DeepCache {
         }
 
         let file = readFileSync(this.__dump);
-        let cache: { [key: string]: [AllowedCacheValue, number, number]; } = msgpack.unpack(file);
+        let content: any = msgpack.decode(file);
 
+        if (!content) {
+            return false;
+        }
+
+        let cache: { [key: string]: [AllowedCacheValue, number, number]; } = content;
         let timestamp = cachedTimestamp;
 
         for (let [key, value] of Object.entries(cache)) {
@@ -379,7 +384,6 @@ export default class DeepCache {
         };
 
         const ttl = rootFolder.ttl[key];
-        console.log((ttl.start + ttl.ttl) - cachedTimestamp)
 
         if ((ttl !== undefined) && ((ttl.start + ttl.ttl) <= cachedTimestamp)) {
             this.__del(key);

@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs_1 = require("fs");
-const msgpack = require("msgpack");
+const msgpack = require("@msgpack/msgpack");
 const EmptyMapIterator = (new Map()).keys();
 const IsArray = Array.isArray;
 const structuredClone = global.structuredClone;
@@ -191,7 +191,7 @@ class DeepCache {
             }
             dumpData[key] = [value, ttl === null || ttl === void 0 ? void 0 : ttl.start, ttl === null || ttl === void 0 ? void 0 : ttl.ttl];
         }
-        (0, fs_1.writeFileSync)(this.__dump, msgpack.pack(dumpData));
+        (0, fs_1.writeFileSync)(this.__dump, msgpack.encode(dumpData));
         return true;
     }
     loadDump() {
@@ -199,7 +199,11 @@ class DeepCache {
             throw new Error(`"dump" not configured for this cache instance`);
         }
         let file = (0, fs_1.readFileSync)(this.__dump);
-        let cache = msgpack.unpack(file);
+        let content = msgpack.decode(file);
+        if (!content) {
+            return false;
+        }
+        let cache = content;
         let timestamp = cachedTimestamp;
         for (let [key, value] of Object.entries(cache)) {
             if ((value[1] + value[2]) <= timestamp) {
@@ -247,7 +251,6 @@ class DeepCache {
         }
         ;
         const ttl = rootFolder.ttl[key];
-        console.log((ttl.start + ttl.ttl) - cachedTimestamp);
         if ((ttl !== undefined) && ((ttl.start + ttl.ttl) <= cachedTimestamp)) {
             this.__del(key);
             return false;

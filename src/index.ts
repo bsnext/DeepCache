@@ -1,5 +1,5 @@
-import { throws } from "assert";
 import { readFileSync, writeFileSync } from "fs";
+import { EventEmitter } from "events";
 import * as msgpack from "@msgpack/msgpack";
 
 ////////////////////////////////
@@ -8,7 +8,6 @@ type AllowedArray = AllowedCacheValue[];
 type AllowedObject = { [key: string]: AllowedCacheValue; };
 type AllowedCacheValue = string | number | boolean | null | AllowedObject | AllowedArray;
 
-const EmptyMapIterator = (new Map()).keys();
 const IsArray = Array.isArray;
 const structuredClone = global.structuredClone;
 
@@ -25,17 +24,15 @@ setInterval(updateTimestamp, 1000);
 
 ////////////////////////////////
 
-export default class DeepCache {
+export default class DeepCache extends EventEmitter {
     private __root: {
         data: { [key: string]: AllowedCacheValue; };
         ttl: { [key: string]: { start: number, ttl: number; }; };
-        keys: Set<string>;
     };
 
     private __folders: {
         [key: string]: {
             data: { [key: string]: AllowedCacheValue; };
-            keys: Set<string>;
         };
     };
 
@@ -43,23 +40,20 @@ export default class DeepCache {
     private __ttc: number;
     private __dump?: string;
     private __separator?: string | false;
-    private __simple?: boolean;
     private __cloning?: boolean;
+    private __events?: boolean;
 
-    constructor(options?: { ttl?: number; dump?: string; separator?: string | false; simple?: boolean; cloning?: boolean; ttc?: number }) {
+    constructor(options?: { ttl?: number; dump?: string; separator?: string | false; cloning?: boolean; ttc?: number; events?: boolean; }) {
+        super();
         this.__folders = {};
-        this.__root = { data: {}, ttl: {}, keys: new Set() };
+        this.__root = { data: {}, ttl: {} };
 
         this.__ttl = options?.ttl && options.ttl > 0 ? Math.round(options.ttl) : 60;
         this.__ttc = options?.ttc && options.ttc > 0 ? Math.round(options.ttc) : 60;
         this.__dump = options?.dump;
         this.__separator = options?.separator;
-        this.__simple = options?.simple;
         this.__cloning = options?.cloning;
-
-        ////////////////////////
-
-        const __this = this;
+        this.__events = options?.events;
 
         ////////////////////////
 
@@ -100,14 +94,12 @@ export default class DeepCache {
             this.__set = function (key: string, value: AllowedCacheValue, ttl?: number, ttlend?: number, timestamp: number = cachedTimestamp) {
                 const rootFolder = this.__root;
 
-                rootFolder.data[key] = value;
-                rootFolder.ttl[key] = { start: timestamp, ttl: ttl || this.__ttl };
-
-                if (this.__simple === true) {
-                    return true;
+                if (rootFolder.data[key] === value) {
+                    return false;
                 }
 
-                const setResult = rootFolder.keys.add(key);
+                rootFolder.data[key] = value;
+                rootFolder.ttl[key] = { start: timestamp, ttl: ttl || this.__ttl };
 
                 const path = getKeyPath(key);
 
@@ -115,44 +107,30 @@ export default class DeepCache {
                     for (let folder of path) {
                         if (this.__folders[folder] === undefined) {
                             this.__folders[folder] = {
-                                data: {},
-                                keys: new Set()
+                                data: {}
                             };
                         }
 
                         const childFolder = this.__folders[folder];
                         childFolder.data[key] = rootFolder.data[key];
-                        childFolder.keys.add(key);
                     }
                 }
 
-                return setResult ? true : false;
+                if (this.__events) {
+                    this.emit(`set`, key, value);
+                }
+
+                return true;
             };
 
             this.__del = function (key: string) {
                 const rootFolder = this.__root;
 
-                if (this.__simple === true) {
-                    const deleteResult = (rootFolder.data[key] !== undefined) ? true : false;
+                if (rootFolder.data[key] === undefined) {
+                    return false;
+                };
 
-                    delete rootFolder.data[key];
-                    // delete rootFolder.ttl[key];
-
-                    return deleteResult;
-                } else {
-                    if (rootFolder.keys.has(key) === false) {
-                        return false;
-                    };
-
-                    delete rootFolder.data[key];
-                    // delete rootFolder.ttl[key];
-                }
-
-                const deleteResult = rootFolder.keys.delete(key);
-
-                if (deleteResult === false) {
-                    return deleteResult;
-                }
+                delete rootFolder.data[key];
 
                 const path = getKeyPath(key);
 
@@ -162,118 +140,120 @@ export default class DeepCache {
 
                         if (childFolder !== undefined) {
                             delete childFolder.data[key];
-                            childFolder.keys.delete(key);
                         }
                     }
                 }
 
-                return deleteResult;
+                if (this.__events) {
+                    this.emit(`del`, key);
+                }
+
+                return true;
             };
 
             if (this.__ttc) {
                 this.__clean = function () {
-                    let removedKeys = 0;
+                    // let removedKeys = 0;
 
-                    const rootFolder = __this.__root;
+                    const rootFolder = this.__root;
 
                     for (let i in rootFolder.ttl) {
-                        let value = rootFolder.ttl[i]
+                        let value = rootFolder.ttl[i];
 
                         if ((value.start + value.ttl) <= cachedTimestamp) {
+                            const isExists = rootFolder.data[i] !== undefined;
+
                             delete rootFolder.data[i];
                             delete rootFolder.ttl[i];
-
-                            if (!__this.__simple) {
-                                rootFolder.keys.delete(i);
-                            }
 
                             const path = getKeyPath(i);
 
                             if (path !== false) {
                                 for (let folder of path) {
-                                    const childFolder = __this.__folders[folder];
+                                    const childFolder = this.__folders[folder];
 
                                     if (childFolder !== undefined) {
                                         delete childFolder.data[i];
-                                        childFolder.keys.delete(i);
                                     }
                                 }
                             }
 
-                            removedKeys++;
+                            if (this.__events && isExists) {
+                                this.emit(`del`, i);
+                                this.emit(`expired`, i);
+                            }
+
+                            // removedKeys++;
                         }
                     }
 
-                    return true
-                }
+                    return true;
+                };
 
-                setInterval(this.__clean, this.__ttc * 1000);
+                setInterval(this.__clean.bind(this), this.__ttc * 1000);
             }
         } else {
             this.__set = function (key: string, value: AllowedCacheValue, ttl?: number, ttlend?: number, timestamp: number = cachedTimestamp) {
                 const rootFolder = this.__root;
 
+                if (rootFolder.data[key] === value) {
+                    return false;
+                }
+
                 rootFolder.data[key] = value;
                 rootFolder.ttl[key] = { start: timestamp, ttl: ttl || this.__ttl };
 
-                if (this.__simple === true) {
-                    return true;
+                if (this.__events) {
+                    this.emit(`set`, key, value);
                 }
 
-                const setResult = rootFolder.keys.add(key);
-
-                return setResult ? true : false;
+                return true;
             };
 
             this.__del = function (key: string) {
                 const rootFolder = this.__root;
 
-                if (this.__simple === true) {
-                    const deleteResult = (rootFolder.data[key] !== undefined) ? true : false;
-
-                    delete rootFolder.data[key];
-                    // delete rootFolder.ttl[key];
-
-                    return deleteResult;
-                } else {
-                    if (rootFolder.keys.has(key) === false) {
-                        return false;
-                    }
-
-                    delete rootFolder.data[key];
-                    // delete rootFolder.ttl[key];
-
-                    const deleteResult = rootFolder.keys.delete(key);
-
-                    return deleteResult;
+                if (rootFolder.data[key] === undefined) {
+                    return false;
                 }
+
+                delete rootFolder.data[key];
+
+                if (this.__events) {
+                    this.emit(`del`, key);
+                }
+
+                return true;
             };
 
             if (this.__ttc) {
                 this.__clean = function () {
-                    let removedKeys = 0;
+                    // let removedKeys = 0;
 
-                    const rootFolder = __this.__root;
+                    const rootFolder = this.__root;
 
                     for (let i in rootFolder.ttl) {
-                        let value = rootFolder.ttl[i]
+                        const value = rootFolder.ttl[i];
 
                         if ((value.start + value.ttl) <= cachedTimestamp) {
+                            const isExists = rootFolder.data[i] !== undefined;
+
                             delete rootFolder.data[i];
                             delete rootFolder.ttl[i];
 
-                            if (!__this.__simple) {
-                                rootFolder.keys.delete(i);
+                            if (this.__events && isExists) {
+                                this.emit(`del`, i);
+                                this.emit(`expired`, i);
                             }
-
-                            removedKeys++;
+                            // removedKeys++;
                         }
+
                     }
 
-                    return true
-                }
+                    return true;
+                };
 
-                setInterval(this.__clean, this.__ttc * 1000);
+                setInterval(this.__clean.bind(this), this.__ttc * 1000);
             }
         }
     }
@@ -370,18 +350,9 @@ export default class DeepCache {
     has(key: string) {
         const rootFolder = this.__root;
 
-        if (this.__simple === true) {
-            const record = rootFolder.data[key];
-
-            if (record === undefined) {
-                return false;
-            }
-
-        } else {
-            if (this.__root.keys.has(key) === false) {
-                return false;
-            }
-        };
+        if (this.__root.data[key] === undefined) {
+            return false;
+        }
 
         const ttl = rootFolder.ttl[key];
 
@@ -404,6 +375,11 @@ export default class DeepCache {
 
         if ((ttl !== undefined) && ((ttl.start + ttl.ttl) <= cachedTimestamp)) {
             this.__del(key);
+
+            if (this.__events) {
+                this.emit(`expired`, key);
+            }
+
             return undefined;
         }
 
@@ -418,27 +394,7 @@ export default class DeepCache {
         return this.__del(key);
     }
 
-    keys(path?: string) {
-        if (this.__simple === true) {
-            throw new Error(`"keys" not allowed in cache instance with enabled "simple" property`);
-        }
-
-        if (path !== undefined) {
-            if (!this.__folders[path]) {
-                return EmptyMapIterator;
-            };
-
-            return this.__folders[path].keys;
-        } else {
-            return this.__root.keys;
-        }
-    }
-
     values(path?: string) {
-        if ((this.__simple === true) && (path !== undefined)) {
-            throw new Error(`"values" with "path" parameter not allowed in cache instance with enabled "simple" property`);
-        }
-
         if (path !== undefined) {
             if (!this.__folders[path]) {
                 return {};
